@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Redirecting…</title>
+  <script>
+    (function () {
+      // 兼容旧地址：/rest-api/ -> /rest-api，保留 #锚点
+      var path = window.location.pathname.replace(/\/+$/, '');
+      window.location.replace(path + window.location.hash);
+    })();
+  </script>
+</head>
+<body>
+  <noscript><a href="../">Continue</a></noscript>
+</body>
+</html>
