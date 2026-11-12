@@ -70,7 +70,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
+import { computed, ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSiteData, usePageData } from '@vuepress/client'
 import HeaderItem from './HeaderItem.vue'
@@ -234,6 +234,11 @@ const scrollToHeader = (slug) => {
     
     // 立即设置活跃标题
     activeHeaderSlug.value = slug
+    // 点击同一个已激活标题时 watcher 不会再次触发，主动同步展开路径。
+    syncExpandedHeaderPath(slug)
+
+    // HeaderItem 阻止事件继续冒泡，避免 Layout 的全局锚点处理重复触发一次滚动。
+    window.history.replaceState(null, '', `#${slug}`)
     
     // 获取导航栏高度
     const navbar = document.querySelector('.navbar')
@@ -875,11 +880,11 @@ const collapseSiblingBranches = (siblings, activeHeader) => {
   })
 }
 
-// 监听活跃标题变化，自动展开相关路径
-watch(activeHeaderSlug, (newSlug) => {
-  if (!newSlug) return
+// 展开激活标题的祖先路径，并让激活项保持在侧边栏的可视区域中。
+const syncExpandedHeaderPath = (slug) => {
+  if (!slug) return
 
-  const headerPath = findHeaderPath(pageHeaders.value, newSlug)
+  const headerPath = findHeaderPath(pageHeaders.value, slug)
   if (!headerPath) return
 
   headerPath.forEach((header, index) => {
@@ -895,6 +900,16 @@ watch(activeHeaderSlug, (newSlug) => {
       expandedHeaders.value.add(header.slug)
     }
   })
+
+  nextTick(() => {
+    const activeLink = document.querySelector('.custom-sidebar .header-link.active')
+    activeLink?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' })
+  })
+}
+
+// 监听活跃标题变化，自动展开相关路径。
+watch(activeHeaderSlug, (newSlug) => {
+  syncExpandedHeaderPath(newSlug)
 }, { immediate: true })
 
 // 扁平化标题（用于Intersection Observer）

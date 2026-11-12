@@ -6,7 +6,7 @@
         :href="'#' + header.slug"
         class="header-link"
         :class="{ 'active': isActive }"
-        @click.prevent="$emit('scroll-to', header.slug)"
+        @click.stop.prevent="$emit('scroll-to', header.slug)"
       >
         <span class="header-text">{{ header.title }}</span>
       </a>
@@ -16,7 +16,7 @@
         v-if="hasChildren"
         class="expand-btn"
         :class="{ 'expanded': isExpanded }"
-        
+        @click.stop="$emit('toggle', header.slug)"
       >
         <svg class="expand-icon" viewBox="0 0 24 24" width="24" height="24">
           <path fill="currentColor" d="M8.59 16.58L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.42z"/>
@@ -253,4 +253,4 @@ const handleToggle = () => {
     }
   }
 }
-</style> 
+</style>
