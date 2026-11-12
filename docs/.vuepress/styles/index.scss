@@ -346,7 +346,8 @@ tbody tr:nth-child(odd) {
 }
 // 外部锚点链接首次加载时直接定位，避免页面先闪现顶部再滚动。
 // 页面内目录和搜索跳转由组件显式使用 smooth，仍保留平滑体验。
-html {
+// VuePress 默认使用 :root 设置 smooth；保持相同选择器优先级，确保首次深链直接定位。
+:root {
   scroll-behavior: auto;
   scroll-padding-top: 80px; // 导航栏高度60px，然后向下滚动60px，所以是0px
 }
@@ -728,6 +729,21 @@ html {
       th, td {
         padding: 0.8rem;
       }
+    }
+  }
+
+  // 长代码示例和宽表格在容器内横向滚动，避免把整页撑出屏幕。
+  .page-main {
+    min-width: 0;
+
+    div[class*='language-'],
+    table {
+      max-width: 100%;
+      overflow-x: auto;
+    }
+
+    table {
+      display: block;
     }
   }
 }
