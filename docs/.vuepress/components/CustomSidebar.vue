@@ -1092,13 +1092,16 @@ const flattenHeaders = (headers) => {
       }
       
       &::selection {
-        background: #f0f0f0;
-        color: #1a1a1a;
+        // 覆盖全局 selection 的白色文字，使用主题变量确保两种主题都有对比度。
+        background: var(--c-brand) !important;
+        color: var(--c-bg) !important;
+        text-shadow: none !important;
       }
       
       &::-moz-selection {
-        background: #f0f0f0;
-        color: #1a1a1a;
+        background: var(--c-brand) !important;
+        color: var(--c-bg) !important;
+        text-shadow: none !important;
       }
     }
     
@@ -1323,13 +1326,15 @@ const flattenHeaders = (headers) => {
         }
         
         &::selection {
-          background: #404040;
-          color: #ffffff;
+          background: var(--c-brand) !important;
+          color: var(--c-bg) !important;
+          text-shadow: none !important;
         }
         
         &::-moz-selection {
-          background: #404040;
-          color: #ffffff;
+          background: var(--c-brand) !important;
+          color: var(--c-bg) !important;
+          text-shadow: none !important;
         }
       }
       
