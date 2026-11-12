@@ -261,6 +261,23 @@ const scrollToHeader = (slug) => {
   }
 }
 
+// VuePress 在 hydration 后会再次处理首次访问的 hash，可能覆盖 CSS 的锚点偏移。
+// 这里使用无动画滚动校正位置，避免标题被固定导航栏遮住。
+const alignInitialHashTarget = () => {
+  const slug = window.location.hash.slice(1)
+  const element = slug && document.getElementById(slug)
+  if (!element) return
+
+  const navbar = document.querySelector('.navbar')
+  const navbarHeight = navbar ? navbar.offsetHeight : 60
+  const elementTop = element.getBoundingClientRect().top + window.pageYOffset
+
+  window.scrollTo({
+    top: Math.max(0, elementTop - navbarHeight - 20),
+    behavior: 'auto'
+  })
+}
+
 // 切换标题展开状态
 const toggleHeader = (slug) => {
   const expanded = expandedHeaders.value
@@ -815,6 +832,11 @@ onMounted(() => {
   if (initialSlug && document.getElementById(initialSlug)) {
     activeHeaderSlug.value = initialSlug
     syncExpandedHeaderPath(initialSlug)
+
+    // 等 VuePress 完成首次 hash 定位后立即校正，无平滑动画。
+    requestAnimationFrame(() => {
+      requestAnimationFrame(alignInitialHashTarget)
+    })
   }
 
   // 延迟初始化，确保DOM已渲染
