@@ -352,6 +352,17 @@ tbody tr:nth-child(odd) {
   scroll-padding-top: 80px; // 导航栏高度60px，然后向下滚动60px，所以是0px
 }
 
+// 浏览器和 VuePress 在首次处理 URL hash 时会滚动到目标标题。
+// 使用标题自身的滚动边距，确保锚点不会被固定导航栏遮住。
+.theme-default-content h1,
+.theme-default-content h2,
+.theme-default-content h3,
+.theme-default-content h4,
+.theme-default-content h5,
+.theme-default-content h6 {
+  scroll-margin-top: 80px;
+}
+
 // 页面布局
 .theme-default-content {
   max-width: 900px;

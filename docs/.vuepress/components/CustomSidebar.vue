@@ -809,6 +809,14 @@ const initIntersectionObserver = () => {
 }
 
 onMounted(() => {
+  // 首次通过带 #锚点的链接进入时，Intersection Observer 不一定会触发。
+  // 主动同步菜单状态，确保当前分支展开且激活项出现在侧栏可视区域。
+  const initialSlug = window.location.hash.slice(1)
+  if (initialSlug && document.getElementById(initialSlug)) {
+    activeHeaderSlug.value = initialSlug
+    syncExpandedHeaderPath(initialSlug)
+  }
+
   // 延迟初始化，确保DOM已渲染
   setTimeout(() => {
     initIntersectionObserver()
@@ -903,7 +911,19 @@ const syncExpandedHeaderPath = (slug) => {
 
   nextTick(() => {
     const activeLink = document.querySelector('.custom-sidebar .header-link.active')
-    activeLink?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' })
+    const sidebar = document.querySelector('.sidebar-nav')
+
+    if (!activeLink || !sidebar) return
+
+    // 只滚动侧栏本身，避免 scrollIntoView 连带影响右侧正文的位置。
+    const linkRect = activeLink.getBoundingClientRect()
+    const sidebarRect = sidebar.getBoundingClientRect()
+    const isAboveViewport = linkRect.top < sidebarRect.top
+    const isBelowViewport = linkRect.bottom > sidebarRect.bottom
+
+    if (isAboveViewport || isBelowViewport) {
+      sidebar.scrollTop += linkRect.top - sidebarRect.top - (sidebar.clientHeight - linkRect.height) / 2
+    }
   })
 }
 
