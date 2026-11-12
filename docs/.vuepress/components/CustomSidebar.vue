@@ -378,6 +378,22 @@ const isHeaderExpanded = (slug) => {
   return expandedHeaders.value.has(slug)
 }
 
+// 搜索时将常见的单词分隔符统一为一个空格。
+// 例如 convert-end、convert_end 与 Convert endpoints 应视为同一组关键词。
+const normalizeSearchText = (value) => String(value)
+  .toLowerCase()
+  .replace(/[-_]+/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
+
+const includesSearchQuery = (text, query) => {
+  return normalizeSearchText(text).includes(normalizeSearchText(query))
+}
+
+const startsWithSearchQuery = (text, query) => {
+  return normalizeSearchText(text).startsWith(normalizeSearchText(query))
+}
+
 // 搜索当前页面内容
 const searchCurrentPage = async (query, results, seenResults) => {
   const pageInfo = {
@@ -390,10 +406,10 @@ const searchCurrentPage = async (query, results, seenResults) => {
   const allHeaders = document.querySelectorAll('h1, h2, h3, h4, h5, h6')
   
   allHeaders.forEach((header, headerIndex) => {
-    const headerText = header.textContent.toLowerCase()
+    const headerText = header.textContent
     
     // 简单的完整字符串匹配（不区分大小写）
-    const headerMatches = headerText.includes(query.toLowerCase())
+    const headerMatches = includesSearchQuery(headerText, query)
     
     if (headerMatches) {
       const title = header.textContent.trim()
@@ -405,9 +421,9 @@ const searchCurrentPage = async (query, results, seenResults) => {
         
         // 计算匹配分数
         let score = 90
-        if (headerText === query.toLowerCase()) {
+        if (normalizeSearchText(headerText) === normalizeSearchText(query)) {
           score = 100 // 完全匹配
-        } else if (headerText.startsWith(query.toLowerCase())) {
+        } else if (startsWithSearchQuery(headerText, query)) {
           score = 95 // 开头匹配
         }
         
@@ -425,21 +441,23 @@ const searchCurrentPage = async (query, results, seenResults) => {
   })
   
   // 2. 搜索段落内容
-  const paragraphs = document.querySelectorAll('p, li, td, div, span, code, pre')
+  // 只检索叶子正文节点。div/span 的 textContent 会包含整段页面，造成错误的“Change log”结果。
+  const paragraphs = document.querySelectorAll('p, li, td, pre, code')
   paragraphs.forEach((paragraph, paragraphIndex) => {
     const text = paragraph.textContent
     
     // 简单的完整字符串匹配（不区分大小写）
-    const contentMatches = text && text.toLowerCase().includes(query.toLowerCase())
+    const contentMatches = text && includesSearchQuery(text, query)
     
     if (contentMatches) {
       // 跳过不相关的元素
-      if (paragraph.closest('.search-section') || 
+      if (paragraph.closest('.search-section') ||
           paragraph.closest('.navbar') || 
           paragraph.closest('.sidebar') ||
           paragraph.closest('.custom-sidebar') ||
           paragraph.closest('script') ||
           paragraph.closest('style') ||
+          (paragraph.tagName === 'CODE' && paragraph.closest('pre')) ||
           text.trim().length < 10) return // 最小文本长度要求
       
       // 找到最近的标题
@@ -477,10 +495,7 @@ const searchCurrentPage = async (query, results, seenResults) => {
         
         // 计算匹配分数
         let score = 70
-        const lowerText = text.toLowerCase()
-        const lowerQuery = query.toLowerCase()
-        
-        if (lowerText.startsWith(lowerQuery)) {
+        if (startsWithSearchQuery(text, query)) {
           score = 80 // 开头匹配
         }
         
@@ -545,7 +560,7 @@ const addExternalPageContentResults = (documentNode, pageInfo, query, results, s
 
   headers.forEach((header, headerIndex) => {
     const headerText = header.textContent.trim()
-    if (!headerText.toLowerCase().includes(query)) return
+    if (!includesSearchQuery(headerText, query)) return
 
     const headerSlug = header.id || 'content'
     const resultKey = `${pageInfo.path}#${headerSlug}`
@@ -559,7 +574,7 @@ const addExternalPageContentResults = (documentNode, pageInfo, query, results, s
       path: `${pageInfo.path}#${headerSlug}`,
       preview: getTextPreview(headerText, query),
       element: null,
-      score: headerText.toLowerCase() === query ? 100 : 90
+      score: normalizeSearchText(headerText) === normalizeSearchText(query) ? 100 : 90
     })
   })
 
@@ -567,7 +582,7 @@ const addExternalPageContentResults = (documentNode, pageInfo, query, results, s
   const contentElements = contentRoot.querySelectorAll('p, li, td, pre')
   contentElements.forEach((element, elementIndex) => {
     const text = element.textContent.trim()
-    if (text.length < 10 || !text.toLowerCase().includes(query)) return
+    if (text.length < 10 || !includesSearchQuery(text, query)) return
 
     const nearestHeader = findPreviousHeader(headers, element)
     const title = nearestHeader ? nearestHeader.textContent.trim() : pageInfo.name
@@ -584,7 +599,7 @@ const addExternalPageContentResults = (documentNode, pageInfo, query, results, s
       path: `${pageInfo.path}#${headerSlug}`,
       preview,
       element: null,
-      score: text.toLowerCase().startsWith(query) ? 80 : 70
+      score: startsWithSearchQuery(text, query) ? 80 : 70
     })
   })
 }
@@ -650,7 +665,7 @@ const searchOtherPagesFromList = async (query, results, seenResults, pageList) =
     const pageName = pageItem.title
     
     // 搜索页面标题。
-    const titleMatches = pageName.toLowerCase().includes(query)
+    const titleMatches = includesSearchQuery(pageName, query)
     
     if (titleMatches) {
       const resultKey = `${path}-title`
@@ -659,9 +674,9 @@ const searchOtherPagesFromList = async (query, results, seenResults, pageList) =
         
         // 计算匹配分数
         let score = 85
-        if (pageName.toLowerCase() === query.toLowerCase()) {
+        if (normalizeSearchText(pageName) === normalizeSearchText(query)) {
           score = 95 // 完全匹配
-        } else if (pageName.toLowerCase().startsWith(query.toLowerCase())) {
+        } else if (startsWithSearchQuery(pageName, query)) {
           score = 90 // 开头匹配
         }
         
@@ -678,7 +693,7 @@ const searchOtherPagesFromList = async (query, results, seenResults, pageList) =
     }
     
     // 搜索页面路径。
-    const pathMatches = path.toLowerCase().includes(query)
+    const pathMatches = includesSearchQuery(path, query)
     
     if (pathMatches) {
       const resultKey = `${path}-path`
