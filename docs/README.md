@@ -35,4 +35,4 @@ onMounted(() => {
 
 ## Redirecting to REST API documentation...
 
-If the automatic redirect does not work, click [here](/rest-api).
+If the automatic redirect does not work, click [here](./rest-api.html).

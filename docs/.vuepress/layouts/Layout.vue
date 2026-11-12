@@ -349,6 +349,11 @@ onUnmounted(() => {
     @media (max-width: 768px) {
       padding: 0 1rem;
     }
+
+    // 窄屏优先保证导航栏不横向溢出；完整目录/搜索移动端改造可另行处理。
+    @media (max-width: 480px) {
+      padding: 0 0.5rem;
+    }
   }
   
   .sidebar-toggle {
@@ -367,6 +372,13 @@ onUnmounted(() => {
     
     @media (max-width: 768px) {
       display: flex;
+    }
+
+    @media (max-width: 480px) {
+      width: 40px;
+      height: 40px;
+      padding: 0.5rem;
+      margin-right: 0.25rem;
     }
     
     .toggle-line {
@@ -411,6 +423,7 @@ onUnmounted(() => {
     display: flex;
     align-items: center;
     flex-shrink: 0;
+    min-width: 0;
     
     .navbar-logo {
       width: 32px;
@@ -424,7 +437,10 @@ onUnmounted(() => {
       color: #1976d2;
       
       @media (max-width: 480px) {
-        font-size: 1rem;
+        font-size: 0.9rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
     }
   }
@@ -523,6 +539,12 @@ onUnmounted(() => {
       justify-content: center;
       min-width: 40px;
       height: 40px;
+
+      @media (max-width: 480px) {
+        min-width: 36px;
+        height: 36px;
+        padding: 0.4rem;
+      }
       
       &:hover {
         background: var(--c-bg-light);
@@ -824,4 +846,4 @@ onUnmounted(() => {
     display: none !important;
   }
 }
-</style> 
+</style>

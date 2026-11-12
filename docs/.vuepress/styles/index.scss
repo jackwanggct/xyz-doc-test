@@ -344,9 +344,10 @@
 tbody tr:nth-child(odd) {
   background: #fff !important;
 }
-// 平滑滚动
+// 外部锚点链接首次加载时直接定位，避免页面先闪现顶部再滚动。
+// 页面内目录和搜索跳转由组件显式使用 smooth，仍保留平滑体验。
 html {
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
   scroll-padding-top: 80px; // 导航栏高度60px，然后向下滚动60px，所以是0px
 }
 
@@ -828,4 +829,4 @@ td::-moz-selection,
 th::-moz-selection {
   background: #1976d2 !important;
   color: #ffffff !important;
-} 
+}

@@ -96,6 +96,16 @@ const isSearching = ref(false) // 搜索状态
 const expandedHeaders = ref(new Set()) // 管理展开的标题
 const isScrollingToHeader = ref(false) // 控制是否正在滚动到指定标题
 
+// 跨页搜索只会请求每个文档一次，后续输入直接复用解析后的页面内容。
+const pageDocumentCache = new Map()
+let searchRequestId = 0
+
+// 直接访问静态文件时路由可能带 .html；前端导航时则不带，比较前统一格式。
+const normalizeDocumentPath = (path) => {
+  const normalizedPath = path.replace(/\.html$/, '')
+  return normalizedPath === '/index' || !normalizedPath ? '/' : normalizedPath
+}
+
 // 页面标题映射
 const pageTitleMap = {
   '/': 'Home',
@@ -137,7 +147,7 @@ const pageHeaders = computed(() => {
 // 侧边栏页面导航
 const sidebarPages = computed(() => {
   const sidebar = siteData.value?.themeConfig?.sidebar || []
-  
+
   if (!sidebar.length) {
     return [
       { link: '/', text: 'Home' },
@@ -426,8 +436,100 @@ const searchCurrentPage = async (query, results, seenResults) => {
   })
 }
 
+// 读取并缓存其他文档页的静态 HTML。使用路由解析结果，兼容 GitHub Pages 的项目子路径部署。
+const loadPageDocument = async (path) => {
+  if (!pageDocumentCache.has(path)) {
+    const routeHref = router.resolve(path).href
+    // Vue Router 使用无扩展名路径，但 GitHub Pages 实际部署的是静态 .html 文件。
+    const staticPageHref = path === '/'
+      ? `${routeHref}index.html`
+      : `${routeHref}.html`
+    const pageRequest = fetch(staticPageHref)
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`Unable to load ${path}`)
+        }
+
+        const html = await response.text()
+        return new DOMParser().parseFromString(html, 'text/html')
+      })
+      .catch((error) => {
+        // 网络临时失败时不缓存失败结果，下次搜索可重试。
+        pageDocumentCache.delete(path)
+        throw error
+      })
+
+    pageDocumentCache.set(path, pageRequest)
+  }
+
+  return pageDocumentCache.get(path)
+}
+
+// 查找匹配内容前最近的标题，以便结果跳转到正确的段落。
+const findPreviousHeader = (headers, element) => {
+  for (let index = headers.length - 1; index >= 0; index -= 1) {
+    const header = headers[index]
+    if (header === element || header.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING) {
+      return header
+    }
+  }
+
+  return null
+}
+
+const addExternalPageContentResults = (documentNode, pageInfo, query, results, seenResults) => {
+  const contentRoot = documentNode.querySelector('.page-main') || documentNode.body
+  const headers = Array.from(contentRoot.querySelectorAll('h1, h2, h3, h4, h5, h6'))
+
+  headers.forEach((header, headerIndex) => {
+    const headerText = header.textContent.trim()
+    if (!headerText.toLowerCase().includes(query)) return
+
+    const headerSlug = header.id || 'content'
+    const resultKey = `${pageInfo.path}#${headerSlug}`
+    if (seenResults.has(resultKey)) return
+
+    seenResults.add(resultKey)
+    results.push({
+      id: `external-header-${pageInfo.path}-${headerIndex}`,
+      title: headerText,
+      pageName: pageInfo.name,
+      path: `${pageInfo.path}#${headerSlug}`,
+      preview: getTextPreview(headerText, query),
+      element: null,
+      score: headerText.toLowerCase() === query ? 100 : 90
+    })
+  })
+
+  // 仅选取叶子内容节点，避免 div/span 的父子嵌套造成大量重复结果。
+  const contentElements = contentRoot.querySelectorAll('p, li, td, pre')
+  contentElements.forEach((element, elementIndex) => {
+    const text = element.textContent.trim()
+    if (text.length < 10 || !text.toLowerCase().includes(query)) return
+
+    const nearestHeader = findPreviousHeader(headers, element)
+    const title = nearestHeader ? nearestHeader.textContent.trim() : pageInfo.name
+    const headerSlug = nearestHeader?.id || 'content'
+    const preview = getTextPreview(text, query)
+    const resultKey = `${pageInfo.path}#${headerSlug}-${preview.substring(0, 30)}`
+    if (seenResults.has(resultKey)) return
+
+    seenResults.add(resultKey)
+    results.push({
+      id: `external-content-${pageInfo.path}-${elementIndex}`,
+      title,
+      pageName: pageInfo.name,
+      path: `${pageInfo.path}#${headerSlug}`,
+      preview,
+      element: null,
+      score: text.toLowerCase().startsWith(query) ? 80 : 70
+    })
+  })
+}
+
 // 搜索其他页面
 const performSearch = async () => {
+  const requestId = ++searchRequestId
   const query = searchQuery.value.trim().toLowerCase()
   if (!query) {
     searchResults.value = []
@@ -449,19 +551,19 @@ const performSearch = async () => {
   ]
   
   // 过滤掉当前页面
-  const otherPages = predefinedPages.filter(page => page.path !== route.path)
-  
-  console.log('Predefined pages:', predefinedPages)
-  console.log('Other pages to search:', otherPages)
-  console.log('Current route:', route.path)
+  const currentPagePath = normalizeDocumentPath(route.path)
+  const otherPages = predefinedPages.filter(page => page.path !== currentPagePath)
   
   // 添加当前页面搜索
   await searchCurrentPage(query, results, seenResults)
-  console.log('After current page search:', results.length)
   
-  // 搜索其他页面（使用预定义列表）
+  // 搜索其他页面的标题、路径和正文。
   await searchOtherPagesFromList(query, results, seenResults, otherPages)
-  console.log('After other pages search:', results.length)
+
+  // 用户继续输入时，丢弃较早搜索的异步结果，避免旧结果覆盖新结果。
+  if (requestId !== searchRequestId || query !== searchQuery.value.trim().toLowerCase()) {
+    return
+  }
   
   // 按相关性排序
   results.sort((a, b) => (b.score || 0) - (a.score || 0))
@@ -479,20 +581,14 @@ const performSearch = async () => {
   isSearching.value = false // 搜索完成
 }
 
-// 新的搜索其他页面函数，使用预定义列表
+// 搜索其他页面，使用预定义列表保证索引范围与导航范围一致。
 const searchOtherPagesFromList = async (query, results, seenResults, pageList) => {
-  console.log('searchOtherPagesFromList called with:', { query, pageListLength: pageList.length })
-  
-  pageList.forEach(pageItem => {
+  await Promise.all(pageList.map(async (pageItem) => {
     const path = pageItem.path
     const pageName = pageItem.title
     
-    console.log(`Checking page: ${path}, pageName: ${pageName}`)
-    
-    // 搜索页面标题 - 简单的完整字符串匹配（不区分大小写）
-    const titleMatches = pageName.toLowerCase().includes(query.toLowerCase())
-    
-    console.log(`Title match for "${pageName}": ${titleMatches}`)
+    // 搜索页面标题。
+    const titleMatches = pageName.toLowerCase().includes(query)
     
     if (titleMatches) {
       const resultKey = `${path}-title`
@@ -507,8 +603,6 @@ const searchOtherPagesFromList = async (query, results, seenResults, pageList) =
           score = 90 // 开头匹配
         }
         
-        console.log(`Adding title result for ${path}: ${pageName}`)
-        
         results.push({
           id: `page-${path.replace(/\//g, '-')}`,
           title: pageName,
@@ -521,17 +615,13 @@ const searchOtherPagesFromList = async (query, results, seenResults, pageList) =
       }
     }
     
-    // 搜索页面路径 - 简单的完整字符串匹配（不区分大小写）
-    const pathMatches = path.toLowerCase().includes(query.toLowerCase())
-    
-    console.log(`Path match for "${path}": ${pathMatches}`)
+    // 搜索页面路径。
+    const pathMatches = path.toLowerCase().includes(query)
     
     if (pathMatches) {
       const resultKey = `${path}-path`
       if (!seenResults.has(resultKey)) {
         seenResults.add(resultKey)
-        
-        console.log(`Adding path result for ${path}`)
         
         results.push({
           id: `path-${path.replace(/\//g, '-')}`,
@@ -544,9 +634,15 @@ const searchOtherPagesFromList = async (query, results, seenResults, pageList) =
         })
       }
     }
-  })
-  
-  console.log('searchOtherPagesFromList results:', results.length)
+
+    try {
+      const documentNode = await loadPageDocument(path)
+      addExternalPageContentResults(documentNode, { path, name: pageName }, query, results, seenResults)
+    } catch (error) {
+      // 单页加载失败不应阻断当前页和其他页面的搜索结果。
+      console.warn(`Failed to search ${path}`, error)
+    }
+  }))
 }
 
 // 搜索页面内容
@@ -558,6 +654,7 @@ const handleSearch = () => {
   }
   
   if (!searchQuery.value.trim()) {
+    searchRequestId += 1
     searchResults.value = []
     showSearchResults.value = false
     return
@@ -611,7 +708,7 @@ const scrollToResult = (result) => {
   // 隐藏搜索结果框
   showSearchResults.value = false
   
-  if (targetPath === route.path) {
+  if (targetPath === normalizeDocumentPath(route.path)) {
     // 当前页面，直接滚动
     if (result.element) {
       // 临时禁用 Intersection Observer 的自动更新
@@ -747,43 +844,57 @@ watch(pageData, () => {
   }, 300)
 }, { deep: true })
 
+// 返回从页面根目录到目标标题的完整路径。
+// 使用标题对象而非 slug，便于在每一层找到同级分支。
+const findHeaderPath = (headers, targetSlug, path = []) => {
+  for (const header of headers) {
+    const currentPath = [...path, header]
+
+    if (header.slug === targetSlug) {
+      return currentPath
+    }
+
+    if (header.children) {
+      const childPath = findHeaderPath(header.children, targetSlug, currentPath)
+      if (childPath) {
+        return childPath
+      }
+    }
+  }
+
+  return null
+}
+
+// 收起同级的非激活分支，避免锚点跳转后保留上一段内容的展开状态。
+const collapseSiblingBranches = (siblings, activeHeader) => {
+  siblings.forEach(header => {
+    if (header.slug !== activeHeader.slug) {
+      expandedHeaders.value.delete(header.slug)
+      closeAllChildren(header)
+    }
+  })
+}
+
 // 监听活跃标题变化，自动展开相关路径
 watch(activeHeaderSlug, (newSlug) => {
-  if (newSlug) {
-    // 找到当前活跃标题的所有父级标题并展开
-    const expandPath = (headers, targetSlug, path = []) => {
-      for (const header of headers) {
-        const currentPath = [...path, header.slug]
-        if (header.slug === targetSlug) {
-          // 展开路径上的所有父级
-          path.forEach(slug => expandedHeaders.value.add(slug))
-          
-          // 找到顶级父菜单（path中的第一个，也就是最顶层的）
-          if (path.length > 0) {
-            const topLevelSlug = path[0]
-            // 收起其他顶级菜单
-            const minLevel = Math.min(...pageHeaders.value.map(h => h.level))
-            const topLevelHeaders = pageHeaders.value.filter(h => h.level === minLevel)
-            topLevelHeaders.forEach(h => {
-              if (h.slug !== topLevelSlug) {
-                expandedHeaders.value.delete(h.slug)
-                closeAllChildren(h)
-              }
-            })
-          }
-          return true
-        }
-        if (header.children) {
-          if (expandPath(header.children, targetSlug, currentPath)) {
-            return true
-          }
-        }
-      }
-      return false
+  if (!newSlug) return
+
+  const headerPath = findHeaderPath(pageHeaders.value, newSlug)
+  if (!headerPath) return
+
+  headerPath.forEach((header, index) => {
+    // 根目录及每一级父标题都只保留当前路径所在的一个分支。
+    const siblings = index === 0
+      ? pageHeaders.value
+      : headerPath[index - 1].children || []
+
+    collapseSiblingBranches(siblings, header)
+
+    // 有子项的当前路径节点需要保持展开，才能显示激活标题。
+    if (header.children?.length) {
+      expandedHeaders.value.add(header.slug)
     }
-    
-    expandPath(pageHeaders.value, newSlug)
-  }
+  })
 }, { immediate: true })
 
 // 扁平化标题（用于Intersection Observer）
