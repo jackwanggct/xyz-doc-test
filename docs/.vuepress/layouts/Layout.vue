@@ -27,14 +27,9 @@
             <span class="toggle-line"></span>
           </button>
 
-          <!-- Logo和标题 -->
+          <!-- 使用可信的本地 SVG，保留品牌图案并按主题调整文字颜色。 -->
           <div class="navbar-brand">
-            <img
-              src="https://static.pro.coins.xyz/static_web/static_pro/images/logo_icon_light.svg"
-              alt="Coins.xyz Logo"
-              class="navbar-logo"
-            >
-            <span class="navbar-title">Coins.xyz API Docs</span>
+            <span class="navbar-logo" role="img" aria-label="Coins.xyz" v-html="coinsLogo"></span>
           </div>
 
           <!-- 中间导航链接 -->
@@ -147,6 +142,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { withBase } from 'vuepress/client'
 import CustomSidebar from '../components/CustomSidebar.vue'
+import coinsLogo from '../public/icons/coins-xyz-logo.svg?raw'
 
 const route = useRoute()
 const isSidebarOpen = ref(false)
@@ -426,21 +422,19 @@ onUnmounted(() => {
     min-width: 0;
     
     .navbar-logo {
-      width: 32px;
-      height: 32px;
-      margin-right: 0.5rem;
-    }
-    
-    .navbar-title {
-      font-size: 1.2rem;
-      font-weight: 600;
-      color: #1976d2;
-      
-      @media (max-width: 480px) {
-        font-size: 0.9rem;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+      display: block;
+      width: 146px;
+      max-width: 100%;
+      line-height: 0;
+
+      :deep(svg) {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      :deep(path:nth-of-type(-n + 2)) {
+        fill: var(--c-text);
       }
     }
   }
