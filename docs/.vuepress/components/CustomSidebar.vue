@@ -95,6 +95,8 @@ const showSearchResults = ref(false) // 控制搜索结果框的显示
 const isSearching = ref(false) // 搜索状态
 const expandedHeaders = ref(new Set()) // 管理展开的标题
 const isScrollingToHeader = ref(false) // 控制是否正在滚动到指定标题
+let activeScrollRequestId = 0
+let cancelPendingScrollCompletion = null
 
 // 跨页搜索只会请求每个文档一次，后续输入直接复用解析后的页面内容。
 const pageDocumentCache = new Map()
@@ -225,10 +227,52 @@ const isActiveHeader = (slug) => {
   return activeHeaderSlug.value === slug
 }
 
+// 平滑滚动的持续时间会随距离变化，不能用固定延迟判断动画已经结束。
+// 等待浏览器的 scrollend 事件，避免滚动过程中 Intersection Observer 把菜单切回旧标题。
+const resumeObserverAfterScroll = (slug, requestId) => {
+  let fallbackTimer = null
+  let completed = false
+
+  const cleanup = () => {
+    window.removeEventListener('scrollend', finish)
+    if (fallbackTimer) window.clearTimeout(fallbackTimer)
+  }
+
+  const finish = () => {
+    if (completed) return
+    completed = true
+    cleanup()
+
+    // 连续点击时，过期跳转的回调不得覆盖最后一次选择。
+    if (requestId !== activeScrollRequestId) return
+
+    cancelPendingScrollCompletion = null
+
+    isScrollingToHeader.value = false
+    activeHeaderSlug.value = slug
+    syncExpandedHeaderPath(slug)
+  }
+
+  cancelPendingScrollCompletion = () => {
+    if (completed) return
+    completed = true
+    cleanup()
+  }
+
+  window.addEventListener('scrollend', finish, { once: true })
+  // 兼容不支持 scrollend 的浏览器，且避免异常情况下永久暂停监听。
+  fallbackTimer = window.setTimeout(finish, 2000)
+}
+
 // 滚动到指定标题
 const scrollToHeader = (slug) => {
   const element = document.getElementById(slug)
   if (element) {
+    // 新请求会取消旧请求的收尾回调，避免两个标题相互争抢激活状态。
+    cancelPendingScrollCompletion?.()
+    cancelPendingScrollCompletion = null
+    const requestId = ++activeScrollRequestId
+
     // 设置标志，临时禁用 Intersection Observer 的自动更新
     isScrollingToHeader.value = true
     
@@ -252,12 +296,8 @@ const scrollToHeader = (slug) => {
       top: scrollToPosition,
       behavior: 'smooth'
     })
-    
-    // 滚动完成后重新启用 Intersection Observer
-    // 使用较长的延迟确保滚动动画完成
-    setTimeout(() => {
-      isScrollingToHeader.value = false
-    }, 1000)
+
+    resumeObserverAfterScroll(slug, requestId)
   }
 }
 
@@ -723,7 +763,7 @@ const generateId = () => {
 }
 
 // 滚动到搜索结果
-const scrollToResult = (result) => {
+const scrollToResult = async (result) => {
   const targetPath = result.path.split('#')[0]
   const hash = result.path.includes('#') ? result.path.split('#')[1] : ''
   
@@ -731,39 +771,17 @@ const scrollToResult = (result) => {
   showSearchResults.value = false
   
   if (targetPath === normalizeDocumentPath(route.path)) {
-    // 当前页面，直接滚动
-    if (result.element) {
-      // 临时禁用 Intersection Observer 的自动更新
-      isScrollingToHeader.value = true
-      
-      // 使用与左侧菜单一致的滚动逻辑
-      const navbar = document.querySelector('.navbar')
-      const navbarHeight = navbar ? navbar.offsetHeight : 60
-      const elementTop = result.element.getBoundingClientRect().top + window.pageYOffset
-      const scrollToPosition = elementTop - navbarHeight - 20 // 标题距离导航栏20px
-      
-      window.scrollTo({
-        top: scrollToPosition,
-        behavior: 'smooth'
-      })
-      
-      // 高亮元素
-      result.element.style.backgroundColor = '#fff3cd'
-      setTimeout(() => {
-        result.element.style.backgroundColor = ''
-      }, 2000)
-      
-      // 重新启用 Intersection Observer
-      setTimeout(() => {
-        isScrollingToHeader.value = false
-      }, 1000)
-    }
+    // 当前页搜索与左侧菜单共用同一个跳转入口，确保偏移、hash 和菜单状态一致。
+    if (hash) scrollToHeader(hash)
   } else {
-    // 跨页面导航
+    // 跨页时先完成路由切换，再用同一个入口定位锚点。
+    // 不把 hash 交给路由处理，避免 VuePress 的默认滚动覆盖导航栏偏移。
     if (hash) {
-      router.push(result.path)
+      await router.push(targetPath)
+      await nextTick()
+      requestAnimationFrame(() => scrollToHeader(hash))
     } else {
-      router.push(targetPath)
+      await router.push(targetPath)
     }
   }
 }
