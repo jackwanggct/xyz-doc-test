@@ -9,7 +9,7 @@ export default defineUserConfig({
   base: BASE,
 
   head: [
-    ['link', { rel: 'icon', href: `${BASE}favicon.ico` }]
+    ['link', { rel: 'icon', type: 'image/png', href: `${BASE}coins-favicon.png` }]
   ],
 
   title: 'Coins.xyz API Documentation',
